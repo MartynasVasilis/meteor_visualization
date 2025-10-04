@@ -1,39 +1,61 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Stars } from "@react-three/drei";
+import { Stars, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 
 import Planet from "../components/Planet";
 import Asteroid from "../components/Asteroid";
 import Sun from "../components/Sun";
 import MapOverlay from "../components/MapOverlay";
-import ImpactControls from "./ImpactControls";
 import Projectile from "../components/Projectile";
+import ImpactControls from "./ImpactControls";
 
-// camera follow (unchanged)
-function CameraFollow({ planetRef, zoom, setZoom, targetZoom, zoomToEarth }) {
+// ---------- CameraFollow ----------
+function CameraFollow({
+  planetRef,
+  zoom,
+  setZoom,
+  targetZoom,
+  zoomToEarth,
+  controlsRef,
+  followEnabled,
+}) {
   const { camera } = useThree();
+
   useFrame(() => {
-    if (!planetRef.current) return;
+    if (!followEnabled || !planetRef.current) return;
+
     const worldPos = new THREE.Vector3();
     planetRef.current.getWorldPosition(worldPos);
+
     const desiredZoom = zoomToEarth ? 0.5 : targetZoom;
     setZoom((z) =>
       Math.abs(z - desiredZoom) < 0.01
         ? desiredZoom
         : z + (desiredZoom - z) * 0.15
     );
-    camera.position.set(worldPos.x, worldPos.y + zoom / 2, worldPos.z + zoom);
+
+    camera.position.lerp(
+      new THREE.Vector3(worldPos.x, worldPos.y + zoom / 2, worldPos.z + zoom),
+      0.05
+    );
     camera.lookAt(worldPos);
+
+    if (controlsRef?.current) {
+      controlsRef.current.target.lerp(worldPos, 0.1);
+      controlsRef.current.update();
+    }
   });
+
   return null;
 }
 
+// ---------- App ----------
 export default function App() {
   const planetRef = useRef();
   const asteroidRef = useRef();
+  const controlsRef = useRef();
 
-  // UI / camera state
   const [zoom, setZoom] = useState(25);
   const [targetZoom, setTargetZoom] = useState(25);
   const [zoomToEarth, setZoomToEarth] = useState(false);
@@ -43,6 +65,16 @@ export default function App() {
   const [mapCenter, setMapCenter] = useState([20, 0]);
   const [mapZoom, setMapZoom] = useState(6);
 
+  const [followEnabled, setFollowEnabled] = useState(true);
+  const followTimerRef = useRef(null);
+
+  // Projectile state
+  const [projectileSpec, setProjectileSpec] = useState(null);
+  const [projectileKey, setProjectileKey] = useState(0);
+  const [projectileActive, setProjectileActive] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  // Load map data
   useEffect(() => {
     fetch("/assets/r3f_demo/ne_110m_admin_0_countries.geojson")
       .then((res) => res.json())
@@ -50,18 +82,7 @@ export default function App() {
       .catch(() => setGeojson(null));
   }, []);
 
-  // asteroid defaults (unchanged)
-  const asteroidSize = 0.1;
-  const asteroidDistance = 20;
-  const asteroidSpeed = 1;
-
-  // projectile state (single)
-  const [projectileSpec, setProjectileSpec] = useState(null);
-  const [projectileKey, setProjectileKey] = useState(0);
-  const [projectileActive, setProjectileActive] = useState(false);
-  const [message, setMessage] = useState(null);
-
-  // simulate impact handlers
+  // ---------- Impact simulation ----------
   const handleSimulateGround = () => {
     setImpact({ lat: 55.1694, lng: 23.8813, radius_km: 50 });
     setMapCenter([55.1694, 23.8813]);
@@ -69,49 +90,61 @@ export default function App() {
     setZoomToEarth(true);
     setTimeout(() => setShowMap(true), 1200);
   };
+
   const handleSimulateSea = () => {
-    setImpact({ lat: 30.0, lon: -40.0, radius_km: 200 });
+    setImpact({ lat: 30.0, lng: -40.0, radius_km: 200 });
     setMapCenter([30.0, -40.0]);
     setMapZoom(5);
     setZoomToEarth(true);
     setTimeout(() => setShowMap(true), 1200);
   };
 
+  // ---------- Camera reset / follow ----------
   const handleRightClick = (e) => {
     e.preventDefault();
     setZoomToEarth(false);
     setShowMap(false);
     setTargetZoom(25);
   };
+
+  const clearFollowTimer = () => {
+    if (followTimerRef.current) {
+      clearTimeout(followTimerRef.current);
+      followTimerRef.current = null;
+    }
+  };
+
+  const startFollowTimer = () => {
+    clearFollowTimer();
+    followTimerRef.current = setTimeout(() => {
+      setFollowEnabled(true);
+      followTimerRef.current = null;
+    }, 3000);
+  };
+
   const handleCloseMap = () => {
     setShowMap(false);
     setZoomToEarth(false);
     setTargetZoom(25);
   };
 
-  // Launch projectile: **spawn at planet center** (or optionally offset slightly)
-  // opts: { spawnAtCenter: bool, surfaceOffsetFromCenter: number, aimAtAsteroid: bool, azimuthDeg, elevationDeg, speed, lifetime }
+  // ---------- Launch projectile ----------
   const handleLaunchProjectile = (opts = {}) => {
-    if (!planetRef.current) {
-      console.warn("Planet not ready");
-      return;
-    }
+    if (!planetRef.current) return;
 
     const {
-      spawnAtCenter = true, // user requested center spawn
-      surfaceOffsetFromCenter = 0, // if you want slightly outside center, set >0
+      spawnAtCenter = true,
+      surfaceOffsetFromCenter = 0,
       aimAtAsteroid = false,
       azimuthDeg = 0,
       elevationDeg = -10,
-      speed = 0.8, // << much slower
-      lifetime = 6000, // ms (longer to allow slow travel)
+      speed = 0.4, // slower
+      lifetime = 8000, // lasts longer
     } = opts;
 
-    // compute planet center
     const planetCenter = new THREE.Vector3();
     planetRef.current.getWorldPosition(planetCenter);
 
-    // compute direction
     let dirVec = new THREE.Vector3();
     if (aimAtAsteroid && asteroidRef.current) {
       const astPos = new THREE.Vector3();
@@ -129,7 +162,6 @@ export default function App() {
         .normalize();
     }
 
-    // start point: if spawnAtCenter true use planetCenter; otherwise offset from center by surfaceOffsetFromCenter along dirVec
     const start = spawnAtCenter
       ? [planetCenter.x, planetCenter.y, planetCenter.z]
       : [
@@ -137,14 +169,6 @@ export default function App() {
           planetCenter.y + dirVec.y * surfaceOffsetFromCenter,
           planetCenter.z + dirVec.z * surfaceOffsetFromCenter,
         ];
-
-    console.log("Launching projectile (center spawn):", {
-      planetCenter: planetCenter.toArray(),
-      start,
-      dir: dirVec.toArray(),
-      speed,
-      lifetime,
-    });
 
     setProjectileSpec({
       start,
@@ -154,22 +178,33 @@ export default function App() {
     });
     setProjectileKey((k) => k + 1);
     setProjectileActive(true);
-    setMessage(null);
+    setMessage("Projectile launched");
   };
 
-  // projectile callbacks
+  // Projectile callbacks
   const onProjectileDespawn = () => {
     setProjectileActive(false);
     setProjectileSpec(null);
     setMessage("Missed — projectile despawned");
   };
+
   const onProjectileHitAsteroid = () => {
     setProjectileActive(false);
     setProjectileSpec(null);
-    setMessage("🎉 Congratulations — asteroid intercepted!");
+    setMessage("🎯 Asteroid intercepted!");
   };
 
-  // UI styles
+  // ---------- UI styles ----------
+  const btnStyle = {
+    background: "rgba(0,0,0,0.8)",
+    color: "lime",
+    border: "2px solid lime",
+    borderRadius: 6,
+    padding: "8px 12px",
+    cursor: "pointer",
+    fontFamily: "monospace",
+  };
+
   const panelStyle = {
     position: "absolute",
     bottom: 20,
@@ -185,21 +220,39 @@ export default function App() {
     gap: 8,
     alignItems: "center",
   };
-  const btnStyle = {
-    background: "rgba(0,0,0,0.8)",
-    color: "lime",
-    border: "2px solid lime",
-    borderRadius: 6,
-    padding: "8px 12px",
-    cursor: "pointer",
-    fontFamily: "monospace",
-  };
 
   return (
     <div
       style={{ width: "100vw", height: "100vh", position: "relative" }}
       onContextMenu={handleRightClick}
     >
+      {/* ---------- Launch Controls ---------- */}
+      <div style={panelStyle}>
+        <button
+          style={btnStyle}
+          onClick={() =>
+            handleLaunchProjectile({
+              spawnAtCenter: true,
+              aimAtAsteroid: false,
+            })
+          }
+        >
+          Launch (center)
+        </button>
+        <button
+          style={btnStyle}
+          onClick={() =>
+            handleLaunchProjectile({ spawnAtCenter: true, aimAtAsteroid: true })
+          }
+        >
+          Launch → Asteroid
+        </button>
+        <div style={{ marginLeft: 12, fontSize: 14 }}>
+          <div>Message: {message || "Ready"}</div>
+        </div>
+      </div>
+
+      {/* ---------- Impact Control Overlay ---------- */}
       <ImpactControls
         mapCenter={mapCenter}
         setMapCenter={setMapCenter}
@@ -215,59 +268,7 @@ export default function App() {
         onLaunchProjectile={() => handleLaunchProjectile()}
       />
 
-      <div style={panelStyle}>
-        {/* spawn at center, slower and smaller */}
-        <button
-          style={btnStyle}
-          onClick={() =>
-            handleLaunchProjectile({
-              spawnAtCenter: true,
-              aimAtAsteroid: false,
-              speed: 0.8,
-              lifetime: 6000,
-            })
-          }
-        >
-          Launch (center)
-        </button>
-
-        {/* spawn at center and aim at asteroid */}
-        <button
-          style={btnStyle}
-          onClick={() =>
-            handleLaunchProjectile({
-              spawnAtCenter: true,
-              aimAtAsteroid: true,
-              speed: 0.8,
-              lifetime: 7000,
-            })
-          }
-        >
-          Launch → Asteroid (center)
-        </button>
-
-        {/* optional: spawn slightly outside center so it's visible immediately */}
-        <button
-          style={btnStyle}
-          onClick={() =>
-            handleLaunchProjectile({
-              spawnAtCenter: false,
-              surfaceOffsetFromCenter: 0.6,
-              azimuthDeg: 0,
-              elevationDeg: -10,
-              speed: 0.8,
-              lifetime: 6000,
-            })
-          }
-        >
-          Launch (offset 0.6)
-        </button>
-
-        <div style={{ marginLeft: 12, fontSize: 14 }}>
-          <div>Message: {message || "Ready"}</div>
-        </div>
-      </div>
-
+      {/* ---------- 3D Scene ---------- */}
       <Canvas camera={{ position: [0, 10, 25] }}>
         <ambientLight intensity={0.3} />
         <pointLight position={[0, 0, 0]} intensity={2} />
@@ -277,9 +278,25 @@ export default function App() {
         <Asteroid
           ref={asteroidRef}
           centerRef={planetRef}
-          distance={asteroidDistance}
-          size={asteroidSize}
-          speed={asteroidSpeed}
+          distance={20}
+          size={0.1}
+          speed={1}
+        />
+        <OrbitControls
+          ref={controlsRef}
+          enableZoom
+          enablePan
+          enableRotate
+          zoomSpeed={0.8}
+          rotateSpeed={0.7}
+          panSpeed={0.5}
+          maxDistance={800}
+          minDistance={1}
+          onStart={() => {
+            setFollowEnabled(false);
+            clearFollowTimer();
+          }}
+          onEnd={() => startFollowTimer()}
         />
         <CameraFollow
           planetRef={planetRef}
@@ -287,8 +304,11 @@ export default function App() {
           setZoom={setZoom}
           targetZoom={targetZoom}
           zoomToEarth={zoomToEarth}
+          controlsRef={controlsRef}
+          followEnabled={followEnabled}
         />
 
+        {/* Projectile */}
         {projectileActive && projectileSpec && (
           <Projectile
             key={projectileKey}
@@ -297,13 +317,14 @@ export default function App() {
             speed={projectileSpec.speed}
             lifetime={projectileSpec.lifetime}
             asteroidRef={asteroidRef}
-            asteroidRadius={asteroidSize}
+            asteroidRadius={0.1}
             onDespawn={onProjectileDespawn}
             onHitAsteroid={onProjectileHitAsteroid}
           />
         )}
       </Canvas>
 
+      {/* ---------- Map Overlay ---------- */}
       {showMap && geojson && (
         <div
           style={{

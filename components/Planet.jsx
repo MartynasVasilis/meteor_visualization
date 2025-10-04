@@ -3,7 +3,9 @@ import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 
 const RADIUS = 0.8;
+const DATA_URL = "/assets/r3f_demo/assets/data/asteroid_data.json";
 
+// Convert lat/lon to Vec3 (for borders)
 function latLonToVec3(lat, lon, radius = RADIUS) {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
@@ -14,12 +16,12 @@ function latLonToVec3(lat, lon, radius = RADIUS) {
   );
 }
 
+// Country borders (wireframe)
 function CountryBorders({ geojson }) {
   if (!geojson) return null;
 
   const lines = [];
-
-  geojson.features.forEach((feature, idx) => {
+  geojson.features.forEach((feature) => {
     const coords = feature.geometry.coordinates;
     if (feature.geometry.type === "Polygon") {
       coords.forEach((ring) => {
@@ -59,51 +61,100 @@ function CountryBorders({ geojson }) {
           itemSize={3}
         />
       </bufferGeometry>
-      <lineBasicMaterial color="lime" linewidth={2} />
+      <lineBasicMaterial color="lime" linewidth={1} />
     </lineSegments>
   );
 }
 
+// ---------------- Planet ----------------
 const Planet = React.forwardRef(
-  ({ distance = 105, size = RADIUS, orbitSpeed = 0.1 }, ref) => {
+  ({ size = RADIUS, speed = 1, timeScale = 10 }, ref) => {
     const [geojson, setGeojson] = useState(null);
-    const groupRef = useRef();
+    const [positions, setPositions] = useState([]);
 
+    const groupRef = useRef();
+    const orbitLineRef = useRef();
+    const timeRef = useRef(0);
+
+    // Load Earth trajectory
+    useEffect(() => {
+      fetch(DATA_URL)
+        .then((res) => res.json())
+        .then((json) => {
+          const { x_earth, y_earth, z_earth } = json;
+          if (x_earth && y_earth && z_earth) {
+            const pts = x_earth.map((x, i) =>
+              new THREE.Vector3(x, y_earth[i], z_earth[i]).multiplyScalar(
+                200 / 1e11
+              )
+            );
+            setPositions(pts);
+          } else {
+            console.error("❌ Earth arrays not found in JSON!");
+          }
+        })
+        .catch((err) => console.error("Failed to load Earth JSON:", err));
+    }, []);
+
+    // Load GeoJSON borders
     useEffect(() => {
       fetch("/assets/r3f_demo/ne_110m_admin_0_countries.geojson")
         .then((res) => res.json())
-        .then(setGeojson);
+        .then(setGeojson)
+        .catch((err) => console.error("Failed to load GeoJSON:", err));
     }, []);
 
-    useFrame(({ clock }) => {
-      const t = clock.getElapsedTime() * orbitSpeed;
-      const x = Math.cos(t) * distance;
-      const z = Math.sin(t) * distance;
-      if (groupRef.current) {
-        groupRef.current.position.set(x, 0, z);
-        groupRef.current.rotation.y += 0.01;
-      }
+    // Create orbit line once
+    useEffect(() => {
+      if (!positions.length || !orbitLineRef.current) return;
+      const lineGeom = new THREE.BufferGeometry();
+      const arr = new Float32Array(positions.length * 3);
+      positions.forEach((v, i) => {
+        arr[i * 3] = v.x;
+        arr[i * 3 + 1] = v.y;
+        arr[i * 3 + 2] = v.z;
+      });
+      lineGeom.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+      orbitLineRef.current.geometry = lineGeom;
+    }, [positions]);
+
+    // Animate Earth (frame-independent)
+    useFrame((_, delta) => {
+      if (!positions.length || !groupRef.current) return;
+      timeRef.current += delta * speed * timeScale;
+      const idx = Math.floor(timeRef.current) % positions.length;
+      const pos = positions[idx];
+      groupRef.current.position.set(pos.x, pos.y, pos.z);
+      groupRef.current.rotation.y += 0.01;
     });
 
     return (
-      <group
-        ref={(node) => {
-          groupRef.current = node;
-          if (typeof ref === "function") ref(node);
-          else if (ref) ref.current = node;
-        }}
-      >
-        <mesh>
-          <sphereGeometry args={[size, 32, 32]} />
-          <meshBasicMaterial
-            color="green"
-            wireframe
-            opacity={0.3}
-            transparent
-          />
-        </mesh>
-        <CountryBorders geojson={geojson} />
-      </group>
+      <>
+        {/* Orbit path (static) */}
+        <line ref={orbitLineRef}>
+          <lineBasicMaterial color="#00ff00" linewidth={1.2} />
+        </line>
+
+        {/* Earth body */}
+        <group
+          ref={(node) => {
+            groupRef.current = node;
+            if (typeof ref === "function") ref(node);
+            else if (ref) ref.current = node;
+          }}
+        >
+          <mesh>
+            <sphereGeometry args={[size, 32, 32]} />
+            <meshBasicMaterial
+              color="green"
+              wireframe
+              opacity={0.4}
+              transparent
+            />
+          </mesh>
+          <CountryBorders geojson={geojson} />
+        </group>
+      </>
     );
   }
 );

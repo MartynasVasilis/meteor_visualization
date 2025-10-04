@@ -2,7 +2,7 @@ import React, { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 
 const EARTH_RADIUS = 0.8;
-const SUN_RADIUS = EARTH_RADIUS * 109;
+const SUN_RADIUS = EARTH_RADIUS * 10;
 
 const Sun = React.forwardRef(({ size = SUN_RADIUS }, ref) => {
   const wire1 = useRef();
