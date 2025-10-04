@@ -7,73 +7,74 @@ import Planet from "../components/Planet";
 import Asteroid from "../components/Asteroid";
 import Sun from "../components/Sun";
 import MapOverlay from "../components/MapOverlay";
+import ImpactControls from "./ImpactControls";
+import Projectile from "../components/Projectile";
 
-// ---------- CameraFollow ----------
+// camera follow (unchanged)
 function CameraFollow({ planetRef, zoom, setZoom, targetZoom, zoomToEarth }) {
   const { camera } = useThree();
-
   useFrame(() => {
-    if (planetRef.current) {
-      const worldPos = new THREE.Vector3();
-      planetRef.current.getWorldPosition(worldPos);
-
-      // Smooth zoom interpolation
-      let desiredZoom = zoomToEarth ? 0.5 : targetZoom;
-      setZoom((z) => {
-        if (Math.abs(z - desiredZoom) < 0.01) return desiredZoom;
-        return z + (desiredZoom - z) * 0.15;
-      });
-
-      camera.position.set(worldPos.x, worldPos.y + zoom / 2, worldPos.z + zoom);
-      camera.lookAt(worldPos);
-    }
+    if (!planetRef.current) return;
+    const worldPos = new THREE.Vector3();
+    planetRef.current.getWorldPosition(worldPos);
+    const desiredZoom = zoomToEarth ? 0.5 : targetZoom;
+    setZoom((z) =>
+      Math.abs(z - desiredZoom) < 0.01
+        ? desiredZoom
+        : z + (desiredZoom - z) * 0.15
+    );
+    camera.position.set(worldPos.x, worldPos.y + zoom / 2, worldPos.z + zoom);
+    camera.lookAt(worldPos);
   });
-
   return null;
 }
 
-// ---------- App ----------
 export default function App() {
   const planetRef = useRef();
+  const asteroidRef = useRef();
+
+  // UI / camera state
   const [zoom, setZoom] = useState(25);
   const [targetZoom, setTargetZoom] = useState(25);
   const [zoomToEarth, setZoomToEarth] = useState(false);
   const [showMap, setShowMap] = useState(false);
   const [geojson, setGeojson] = useState(null);
-
-  // Map overlay state (center/zoom)
+  const [impact, setImpact] = useState(null);
   const [mapCenter, setMapCenter] = useState([20, 0]);
   const [mapZoom, setMapZoom] = useState(6);
 
   useEffect(() => {
     fetch("/assets/r3f_demo/ne_110m_admin_0_countries.geojson")
       .then((res) => res.json())
-      .then(setGeojson);
+      .then(setGeojson)
+      .catch(() => setGeojson(null));
   }, []);
 
-  const [impact, setImpact] = useState(null);
+  // asteroid defaults (unchanged)
+  const asteroidSize = 0.1;
+  const asteroidDistance = 20;
+  const asteroidSpeed = 1;
 
-  // Simulate impact handlers with smooth zoom-in
+  // projectile state (single)
+  const [projectileSpec, setProjectileSpec] = useState(null);
+  const [projectileKey, setProjectileKey] = useState(0);
+  const [projectileActive, setProjectileActive] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  // simulate impact handlers
   const handleSimulateGround = () => {
-    setImpact({ lat: 55.1694, lng: 23.8813, radius_km: 50 }); // Lithuania
+    setImpact({ lat: 55.1694, lng: 23.8813, radius_km: 50 });
     setMapCenter([55.1694, 23.8813]);
     setMapZoom(7);
     setZoomToEarth(true);
-    setTimeout(() => {
-      setShowMap(true);
-      // Do NOT set setZoomToEarth(false) here!
-    }, 1200);
+    setTimeout(() => setShowMap(true), 1200);
   };
-
   const handleSimulateSea = () => {
-    setImpact({ lat: 30.0, lng: -40.0, radius_km: 200 }); // Atlantic
+    setImpact({ lat: 30.0, lon: -40.0, radius_km: 200 });
     setMapCenter([30.0, -40.0]);
     setMapZoom(5);
     setZoomToEarth(true);
-    setTimeout(() => {
-      setShowMap(true);
-      // Do NOT set setZoomToEarth(false) here!
-    }, 1200);
+    setTimeout(() => setShowMap(true), 1200);
   };
 
   const handleRightClick = (e) => {
@@ -82,12 +83,116 @@ export default function App() {
     setShowMap(false);
     setTargetZoom(25);
   };
-
-  // X button handler: smooth zoom out
   const handleCloseMap = () => {
     setShowMap(false);
     setZoomToEarth(false);
     setTargetZoom(25);
+  };
+
+  // Launch projectile: **spawn at planet center** (or optionally offset slightly)
+  // opts: { spawnAtCenter: bool, surfaceOffsetFromCenter: number, aimAtAsteroid: bool, azimuthDeg, elevationDeg, speed, lifetime }
+  const handleLaunchProjectile = (opts = {}) => {
+    if (!planetRef.current) {
+      console.warn("Planet not ready");
+      return;
+    }
+
+    const {
+      spawnAtCenter = true, // user requested center spawn
+      surfaceOffsetFromCenter = 0, // if you want slightly outside center, set >0
+      aimAtAsteroid = false,
+      azimuthDeg = 0,
+      elevationDeg = -10,
+      speed = 0.8, // << much slower
+      lifetime = 6000, // ms (longer to allow slow travel)
+    } = opts;
+
+    // compute planet center
+    const planetCenter = new THREE.Vector3();
+    planetRef.current.getWorldPosition(planetCenter);
+
+    // compute direction
+    let dirVec = new THREE.Vector3();
+    if (aimAtAsteroid && asteroidRef.current) {
+      const astPos = new THREE.Vector3();
+      asteroidRef.current.getWorldPosition(astPos);
+      dirVec.subVectors(astPos, planetCenter).normalize();
+    } else {
+      const az = (azimuthDeg * Math.PI) / 180;
+      const el = (elevationDeg * Math.PI) / 180;
+      dirVec
+        .set(
+          Math.cos(el) * Math.sin(az),
+          Math.sin(el),
+          Math.cos(el) * Math.cos(az)
+        )
+        .normalize();
+    }
+
+    // start point: if spawnAtCenter true use planetCenter; otherwise offset from center by surfaceOffsetFromCenter along dirVec
+    const start = spawnAtCenter
+      ? [planetCenter.x, planetCenter.y, planetCenter.z]
+      : [
+          planetCenter.x + dirVec.x * surfaceOffsetFromCenter,
+          planetCenter.y + dirVec.y * surfaceOffsetFromCenter,
+          planetCenter.z + dirVec.z * surfaceOffsetFromCenter,
+        ];
+
+    console.log("Launching projectile (center spawn):", {
+      planetCenter: planetCenter.toArray(),
+      start,
+      dir: dirVec.toArray(),
+      speed,
+      lifetime,
+    });
+
+    setProjectileSpec({
+      start,
+      direction: [dirVec.x, dirVec.y, dirVec.z],
+      speed,
+      lifetime,
+    });
+    setProjectileKey((k) => k + 1);
+    setProjectileActive(true);
+    setMessage(null);
+  };
+
+  // projectile callbacks
+  const onProjectileDespawn = () => {
+    setProjectileActive(false);
+    setProjectileSpec(null);
+    setMessage("Missed — projectile despawned");
+  };
+  const onProjectileHitAsteroid = () => {
+    setProjectileActive(false);
+    setProjectileSpec(null);
+    setMessage("🎉 Congratulations — asteroid intercepted!");
+  };
+
+  // UI styles
+  const panelStyle = {
+    position: "absolute",
+    bottom: 20,
+    left: 20,
+    zIndex: 4000,
+    background: "rgba(0,0,0,0.6)",
+    border: "2px solid lime",
+    color: "lime",
+    padding: 10,
+    borderRadius: 6,
+    fontFamily: "monospace",
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+  };
+  const btnStyle = {
+    background: "rgba(0,0,0,0.8)",
+    color: "lime",
+    border: "2px solid lime",
+    borderRadius: 6,
+    padding: "8px 12px",
+    cursor: "pointer",
+    fontFamily: "monospace",
   };
 
   return (
@@ -95,102 +200,87 @@ export default function App() {
       style={{ width: "100vw", height: "100vh", position: "relative" }}
       onContextMenu={handleRightClick}
     >
-      {/* Control Buttons */}
-      <div
-        style={{
-          position: "absolute",
-          top: 20,
-          left: 20,
-          zIndex: 2000,
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
-        }}
-      >
+      <ImpactControls
+        mapCenter={mapCenter}
+        setMapCenter={setMapCenter}
+        mapZoom={mapZoom}
+        setMapZoom={setMapZoom}
+        showMap={showMap}
+        setShowMap={setShowMap}
+        geojson={geojson}
+        setZoomToEarth={setZoomToEarth}
+        setTargetZoom={setTargetZoom}
+        impact={impact}
+        setImpact={setImpact}
+        onLaunchProjectile={() => handleLaunchProjectile()}
+      />
+
+      <div style={panelStyle}>
+        {/* spawn at center, slower and smaller */}
         <button
-          style={{
-            background: "rgba(0,0,0,0.8)",
-            color: "lime",
-            border: "2px solid lime",
-            borderRadius: "6px",
-            padding: "10px 20px",
-            fontSize: "16px",
-            cursor: "pointer",
-          }}
-          onClick={handleSimulateGround}
+          style={btnStyle}
+          onClick={() =>
+            handleLaunchProjectile({
+              spawnAtCenter: true,
+              aimAtAsteroid: false,
+              speed: 0.8,
+              lifetime: 6000,
+            })
+          }
         >
-          Simulate impact on ground
+          Launch (center)
         </button>
+
+        {/* spawn at center and aim at asteroid */}
         <button
-          style={{
-            background: "rgba(0,0,0,0.8)",
-            color: "lime",
-            border: "2px solid lime",
-            borderRadius: "6px",
-            padding: "10px 20px",
-            fontSize: "16px",
-            cursor: "pointer",
-          }}
-          onClick={handleSimulateSea}
+          style={btnStyle}
+          onClick={() =>
+            handleLaunchProjectile({
+              spawnAtCenter: true,
+              aimAtAsteroid: true,
+              speed: 0.8,
+              lifetime: 7000,
+            })
+          }
         >
-          Simulate impact on sea
+          Launch → Asteroid (center)
         </button>
+
+        {/* optional: spawn slightly outside center so it's visible immediately */}
+        <button
+          style={btnStyle}
+          onClick={() =>
+            handleLaunchProjectile({
+              spawnAtCenter: false,
+              surfaceOffsetFromCenter: 0.6,
+              azimuthDeg: 0,
+              elevationDeg: -10,
+              speed: 0.8,
+              lifetime: 6000,
+            })
+          }
+        >
+          Launch (offset 0.6)
+        </button>
+
+        <div style={{ marginLeft: 12, fontSize: 14 }}>
+          <div>Message: {message || "Ready"}</div>
+        </div>
       </div>
 
-      {/* Zoom Buttons */}
-      <div
-        style={{
-          position: "absolute",
-          top: 20,
-          right: 40,
-          zIndex: 2100,
-          display: "flex",
-          flexDirection: "column",
-          gap: "10px",
-        }}
-      >
-        <button
-          style={{
-            background: "rgba(0,0,0,0.8)",
-            color: "lime",
-            border: "2px solid lime",
-            borderRadius: "6px",
-            padding: "6px 16px",
-            fontSize: "24px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-          onClick={() => setTargetZoom((z) => Math.max(0.5, z - 3))}
-          aria-label="Zoom in"
-        >
-          +
-        </button>
-        <button
-          style={{
-            background: "rgba(0,0,0,0.8)",
-            color: "lime",
-            border: "2px solid lime",
-            borderRadius: "6px",
-            padding: "6px 16px",
-            fontSize: "24px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-          onClick={() => setTargetZoom((z) => Math.min(200, z + 3))}
-          aria-label="Zoom out"
-        >
-          −
-        </button>
-      </div>
-
-      {/* 3D Canvas */}
       <Canvas camera={{ position: [0, 10, 25] }}>
         <ambientLight intensity={0.3} />
         <pointLight position={[0, 0, 0]} intensity={2} />
         <Stars radius={300} depth={60} count={5000} factor={7} />
         <Sun />
         <Planet ref={planetRef} distance={300} />
-        <Asteroid centerRef={planetRef} distance={20} size={0.1} speed={1} />
+        <Asteroid
+          ref={asteroidRef}
+          centerRef={planetRef}
+          distance={asteroidDistance}
+          size={asteroidSize}
+          speed={asteroidSpeed}
+        />
         <CameraFollow
           planetRef={planetRef}
           zoom={zoom}
@@ -198,9 +288,22 @@ export default function App() {
           targetZoom={targetZoom}
           zoomToEarth={zoomToEarth}
         />
+
+        {projectileActive && projectileSpec && (
+          <Projectile
+            key={projectileKey}
+            start={projectileSpec.start}
+            direction={projectileSpec.direction}
+            speed={projectileSpec.speed}
+            lifetime={projectileSpec.lifetime}
+            asteroidRef={asteroidRef}
+            asteroidRadius={asteroidSize}
+            onDespawn={onProjectileDespawn}
+            onHitAsteroid={onProjectileHitAsteroid}
+          />
+        )}
       </Canvas>
 
-      {/* Map Overlay */}
       {showMap && geojson && (
         <div
           style={{
@@ -218,16 +321,8 @@ export default function App() {
             justifyContent: "center",
           }}
         >
-          {/* X Button */}
           <button
-            onClick={() => {
-              setZoomToEarth(true); // Start zoom out immediately
-              setShowMap(false); // Hide overlay immediately
-              setTimeout(() => {
-                setZoomToEarth(false);
-                setTargetZoom(25);
-              }, 100);
-            }}
+            onClick={handleCloseMap}
             style={{
               position: "absolute",
               top: 40,
@@ -241,24 +336,11 @@ export default function App() {
               fontSize: 48,
               cursor: "pointer",
               zIndex: 2000,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
               padding: 0,
               lineHeight: 1,
-              fontWeight: "bold",
-              userSelect: "none",
             }}
-            aria-label="Close map"
           >
-            <span
-              style={{
-                display: "inline-block",
-                transform: "translateY(-6px)",
-              }}
-            >
-              ×
-            </span>
+            ×
           </button>
           <MapOverlay zoom={mapZoom} center={mapCenter} impact={impact} />
         </div>
