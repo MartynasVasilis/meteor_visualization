@@ -1,34 +1,46 @@
 import React, { useRef, useState, useCallback, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Stars } from "@react-three/drei";
+import { Stars, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
+
 import Planet from "../components/Planet";
+import Asteroid from "../components/Asteroid";
 import Sun from "../components/Sun";
 
-function CameraFollow({ planetRef, zoom }) {
+
+function CameraFollow({ planetRef, zoom, rotationSpeed = 0.2 }) {
   const { camera } = useThree();
-  useFrame(() => {
+  useFrame(({ clock }) => {
     if (planetRef.current) {
       const worldPos = new THREE.Vector3();
       planetRef.current.getWorldPosition(worldPos);
-      camera.position.set(worldPos.x, worldPos.y + zoom / 2, worldPos.z + zoom);
+
+      const t = clock.getElapsedTime() * rotationSpeed;
+
+      // Circular orbit around the planet
+      const radius = zoom;
+      const x = worldPos.x + Math.cos(t) * radius;
+      const z = worldPos.z + Math.sin(t) * radius;
+      const y = worldPos.y + zoom * 0.4; // slightly above planet
+
+      camera.position.set(x, y, z);
       camera.lookAt(worldPos);
     }
   });
   return null;
 }
 
+
 export default function App() {
   const planetRef = useRef();
-  const [zoom, setZoom] = useState(25);
+  const [zoom, setZoom] = useState(50);
 
-  // Handles both mouse wheel and touchpad scroll
+  // Mouse wheel zoom in/out
   const handleWheel = useCallback((e) => {
-    e.preventDefault(); // prevent page scroll
-    setZoom((z) => Math.max(5, Math.min(200, z + e.deltaY * 0.1)));
+    e.preventDefault();
+    setZoom((z) => Math.max(10, Math.min(200, z + e.deltaY * 0.1)));
   }, []);
 
-  // Attach listener globally for better touchpad support
   useEffect(() => {
     window.addEventListener("wheel", handleWheel, { passive: false });
     return () => window.removeEventListener("wheel", handleWheel);
@@ -36,12 +48,24 @@ export default function App() {
 
   return (
     <div style={{ width: "100vw", height: "100vh" }}>
-      <Canvas camera={{ position: [0, 10, 25] }}>
-        <ambientLight intensity={0.3} />
+      <Canvas camera={{ position: [0, 50, 150], fov: 60 }}>
+        {/* Lighting */}
+        <ambientLight intensity={0.4} />
         <pointLight position={[0, 0, 0]} intensity={2} />
-        <Stars radius={100} depth={500} count={10000} factor={10} />
+
+        {/* Background */}
+        <Stars radius={300} depth={60} count={5000} factor={7} />
+
+        {/* Sun */}
         <Sun />
-        <Planet ref={planetRef} distance={300} />
+
+        {/* Earth */}
+        <Planet ref={planetRef} distance={200} />
+
+        {/* Asteroid (huge + following Earth) */}
+        <Asteroid centerRef={planetRef} distance={20} size={0.1} speed={1} />
+
+        {/* Camera follows Earth */}
         <CameraFollow planetRef={planetRef} zoom={zoom} />
       </Canvas>
     </div>
