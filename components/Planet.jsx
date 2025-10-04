@@ -70,7 +70,7 @@ const Planet = React.forwardRef(
     const groupRef = useRef();
 
     useEffect(() => {
-      fetch("/ne_110m_admin_0_countries.geojson")
+      fetch("/assets/r3f_demo/ne_110m_admin_0_countries.geojson")
         .then((res) => res.json())
         .then(setGeojson);
     }, []);
