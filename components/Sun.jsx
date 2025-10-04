@@ -1,20 +1,52 @@
-import React from "react";
+import React, { useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 
 const EARTH_RADIUS = 0.8;
 const SUN_RADIUS = EARTH_RADIUS * 109;
 
-const Sun = React.forwardRef(({ size = SUN_RADIUS }, ref) => (
-  <group ref={ref} position={[0, 0, 0]}>
-    {/* Sun sphere with wireframe */}
-    <mesh>
-      <sphereGeometry args={[size, 64, 64]} />
-      <meshBasicMaterial color="yellow" wireframe opacity={0.5} transparent />
-    </mesh>
-    <mesh>
-      <sphereGeometry args={[size + 0.01, 64, 64]} />
-      <meshBasicMaterial color="yellow" wireframe opacity={1} transparent />
-    </mesh>
-  </group>
-));
+const Sun = React.forwardRef(({ size = SUN_RADIUS }, ref) => {
+  const wire1 = useRef();
+  const wire2 = useRef();
+
+  useFrame(({ clock }) => {
+    // Animate wireframes for digital effect
+    if (wire1.current) {
+      wire1.current.rotation.y = clock.getElapsedTime() * 0.5;
+    }
+    if (wire2.current) {
+      wire2.current.rotation.x = clock.getElapsedTime() * 0.3;
+    }
+  });
+
+  return (
+    <group ref={ref} position={[0, 0, 0]}>
+      {/* Core */}
+      <mesh>
+        <sphereGeometry args={[size * 0.97, 32, 32]} />
+        <meshBasicMaterial color="black" />
+      </mesh>
+      {/* Neon green wireframe 1 */}
+      <mesh ref={wire1}>
+        <sphereGeometry args={[size, 32, 32]} />
+        <meshBasicMaterial
+          color="#39ff14"
+          wireframe
+          transparent
+          opacity={0.8}
+        />
+      </mesh>
+      {/* Neon green wireframe 2 (rotated) */}
+      <mesh ref={wire2}>
+        <sphereGeometry args={[size * 1.03, 32, 32]} />
+        <meshBasicMaterial
+          color="#39ff14"
+          wireframe
+          transparent
+          opacity={0.5}
+        />
+      </mesh>
+    </group>
+  );
+});
 
 export default Sun;

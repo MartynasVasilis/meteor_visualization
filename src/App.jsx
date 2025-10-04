@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
 import * as THREE from "three";
@@ -39,40 +39,54 @@ export default function App() {
   const [targetZoom, setTargetZoom] = useState(25);
   const [zoomToEarth, setZoomToEarth] = useState(false);
   const [showMap, setShowMap] = useState(false);
-  const [desiredZoom, setDesiredZoom] = useState(2);
-  const [desiredCenter, setDesiredCenter] = useState([20, 0]);
   const [geojson, setGeojson] = useState(null);
 
-  // Load GeoJSON
+  // Map overlay state (center/zoom)
+  const [mapCenter, setMapCenter] = useState([20, 0]);
+  const [mapZoom, setMapZoom] = useState(6);
+
   useEffect(() => {
     fetch("/assets/r3f_demo/ne_110m_admin_0_countries.geojson")
       .then((res) => res.json())
       .then(setGeojson);
   }, []);
 
-  // Simulate impact handlers
+  const [impact, setImpact] = useState(null);
+
+  // Simulate impact handlers with smooth zoom-in
   const handleSimulateGround = () => {
-    if (!showMap) {
-      setDesiredZoom(8);
-      setDesiredCenter([55.1694, 23.8813]);
-      setZoomToEarth(true);
-      setTimeout(() => setShowMap(true), 1200);
-    }
+    setImpact({ lat: 55.1694, lng: 23.8813, radius_km: 50 }); // Lithuania
+    setMapCenter([55.1694, 23.8813]);
+    setMapZoom(7);
+    setZoomToEarth(true);
+    setTimeout(() => {
+      setShowMap(true);
+      // Do NOT set setZoomToEarth(false) here!
+    }, 1200);
   };
 
   const handleSimulateSea = () => {
-    if (!showMap) {
-      setDesiredZoom(5);
-      setDesiredCenter([30.0, -40.0]);
-      setZoomToEarth(true);
-      setTimeout(() => setShowMap(true), 1200);
-    }
+    setImpact({ lat: 30.0, lng: -40.0, radius_km: 200 }); // Atlantic
+    setMapCenter([30.0, -40.0]);
+    setMapZoom(5);
+    setZoomToEarth(true);
+    setTimeout(() => {
+      setShowMap(true);
+      // Do NOT set setZoomToEarth(false) here!
+    }, 1200);
   };
 
   const handleRightClick = (e) => {
     e.preventDefault();
     setZoomToEarth(false);
     setShowMap(false);
+    setTargetZoom(25);
+  };
+
+  // X button handler: smooth zoom out
+  const handleCloseMap = () => {
+    setShowMap(false);
+    setZoomToEarth(false);
     setTargetZoom(25);
   };
 
@@ -195,23 +209,24 @@ export default function App() {
             left: "10%",
             width: "80vw",
             height: "80vh",
-            background: "rgba(0,0,0,0.8)",
+            background: "rgba(0,0,0,0.2)",
             color: "white",
+            border: "2px solid lime",
+            zIndex: 1000,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            fontSize: 32,
-            zIndex: 100,
-            border: "2px solid lime",
-            overflow: "hidden",
-            pointerEvents: "auto",
           }}
         >
+          {/* X Button */}
           <button
             onClick={() => {
-              setShowMap(false);
-              setZoomToEarth(false);
-              setTargetZoom(25);
+              setZoomToEarth(true); // Start zoom out immediately
+              setShowMap(false); // Hide overlay immediately
+              setTimeout(() => {
+                setZoomToEarth(false);
+                setTargetZoom(25);
+              }, 100);
             }}
             style={{
               position: "absolute",
@@ -223,9 +238,9 @@ export default function App() {
               borderRadius: "50%",
               width: 48,
               height: 48,
-              fontSize: 64,
+              fontSize: 48,
               cursor: "pointer",
-              zIndex: 1000,
+              zIndex: 2000,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -236,9 +251,16 @@ export default function App() {
             }}
             aria-label="Close map"
           >
-            ×
+            <span
+              style={{
+                display: "inline-block",
+                transform: "translateY(-6px)",
+              }}
+            >
+              ×
+            </span>
           </button>
-          <MapOverlay zoom={desiredZoom} center={desiredCenter} />
+          <MapOverlay zoom={mapZoom} center={mapCenter} impact={impact} />
         </div>
       )}
     </div>
