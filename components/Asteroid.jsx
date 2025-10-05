@@ -96,14 +96,13 @@ const Asteroid = ({
       earthCenter.z + pos.z
     );
 
-    meshRef.current.position.lerp(asteroidPos, 0.8); // ✅ smoothed motion
+    meshRef.current.position.copy(asteroidPos); // direct stable motion
     if (orbitLineRef.current) orbitLineRef.current.position.copy(earthCenter);
 
     // Update debug group position (smoother for overlay)
     if (debugGroupRef.current) {
-      debugGroupRef.current.position.lerp(
-        new THREE.Vector3(asteroidPos.x, asteroidPos.y + 1.5, asteroidPos.z),
-        0.2
+      debugGroupRef.current.position.copy(
+        new THREE.Vector3(asteroidPos.x, asteroidPos.y + 1.5, asteroidPos.z)
       );
     }
 
