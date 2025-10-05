@@ -1,179 +1,161 @@
-import React, { useRef, useMemo, useState, useEffect } from "react";
+import React, { useRef, useMemo, useState, useEffect, forwardRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
+import { DISTANCE_SCALE } from "../constants";
 
 const DATA_URL = "/assets/r3f_demo/assets/data/asteroid_data.json";
 
 const randomizeGeometry = (geometry, scale = 0.5) => {
   const geom = geometry.clone();
   const pos = geom.attributes.position;
-  const vertex = new THREE.Vector3();
+  const v = new THREE.Vector3();
   for (let i = 0; i < pos.count; i++) {
-    vertex.fromBufferAttribute(pos, i);
-    const factor = 1 + (Math.random() - 0.5) * scale;
-    vertex.multiplyScalar(factor);
-    pos.setXYZ(i, vertex.x, vertex.y, vertex.z);
+    v.fromBufferAttribute(pos, i);
+    v.multiplyScalar(1 + (Math.random() - 0.5) * scale);
+    pos.setXYZ(i, v.x, v.y, v.z);
   }
   geom.computeVertexNormals();
   return geom;
 };
 
-const Asteroid = ({
-  scale = 1,
-  size = 0.5,
-  speed = 1,
-  timeScale = 20,
-  centerRef = null,
-}) => {
-  const meshRef = useRef();
-  const orbitLineRef = useRef();
-  const debugGroupRef = useRef(); // ✅ separate group for stable debug overlay
-  const timeRef = useRef(0);
+const Asteroid = forwardRef(
+  (
+    { size = 0.3, speed = 1, timeScale = 15, centerRef = null, scale = 1 },
+    ref
+  ) => {
+    const meshRef = useRef();
+    const orbitRef = useRef();
+    const debugRef = useRef();
+    const timeRef = useRef(0);
 
-  const [positions, setPositions] = useState([]);
-  const [hasCollided, setHasCollided] = useState(false);
-  const [distance, setDistance] = useState(null);
-  const [near, setNear] = useState(false);
+    const [positions, setPositions] = useState([]);
+    const [distance, setDistance] = useState(null);
+    const [near, setNear] = useState(false);
+    const [collided, setCollided] = useState(false);
 
-  // 🔹 Load asteroid trajectory
-  useEffect(() => {
-    fetch(DATA_URL)
-      .then((res) => res.json())
-      .then((json) => {
-        const { x_ast, y_ast, z_ast } = json;
-        if (x_ast && y_ast && z_ast) {
+    // Load asteroid trajectory
+    useEffect(() => {
+      fetch(DATA_URL)
+        .then((r) => r.json())
+        .then((json) => {
+          const { x_ast, y_ast, z_ast } = json;
+          if (!x_ast || !y_ast || !z_ast)
+            throw new Error("Invalid asteroid data");
           const pts = x_ast.map((x, i) =>
             new THREE.Vector3(x, y_ast[i], z_ast[i]).multiplyScalar(
-              scale / 1e11
+              DISTANCE_SCALE * scale
             )
           );
           setPositions(pts);
           console.log(`✅ Loaded asteroid trajectory: ${pts.length} points`);
-        } else console.error("❌ Invalid JSON structure (missing arrays)");
-      })
-      .catch((err) => console.error("❌ Failed to load asteroid data:", err));
-  }, [scale]);
+        })
+        .catch(console.error);
+    }, [scale]);
 
-  // 🔹 Geometry
-  const geometry = useMemo(() => {
-    const base = new THREE.SphereGeometry(size, 32, 32);
-    return randomizeGeometry(base, 0.4);
-  }, [size]);
+    // Geometry
+    const geometry = useMemo(() => {
+      const g = new THREE.SphereGeometry(size, 24, 24);
+      return randomizeGeometry(g, 0.4);
+    }, [size]);
 
-  // 🔹 Build orbit line
-  useEffect(() => {
-    if (!positions.length || !orbitLineRef.current) return;
-    const lineGeom = new THREE.BufferGeometry();
-    const arr = new Float32Array(positions.length * 3);
-    positions.forEach((v, i) => {
-      arr[i * 3] = v.x;
-      arr[i * 3 + 1] = v.y;
-      arr[i * 3 + 2] = v.z;
-    });
-    lineGeom.setAttribute("position", new THREE.BufferAttribute(arr, 3));
-    orbitLineRef.current.geometry = lineGeom;
-  }, [positions]);
+    // Build orbit line
+    useEffect(() => {
+      if (!positions.length || !orbitRef.current) return;
+      const arr = new Float32Array(positions.length * 3);
+      positions.forEach((v, i) => arr.set([v.x, v.y, v.z], i * 3));
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+      orbitRef.current.geometry = g;
+    }, [positions]);
 
-  // 🔹 Animate asteroid + collision check
-  useFrame((_, delta) => {
-    if (!meshRef.current || !positions.length || hasCollided) return;
+    // Animation
+    useFrame((_, delta) => {
+      if (!meshRef.current || positions.length < 2 || collided) return;
 
-    timeRef.current += delta * speed * timeScale;
-    const idx = Math.floor(timeRef.current) % positions.length;
-    const pos = positions[idx];
-
-    // Earth world position
-    const earthCenter = new THREE.Vector3(0, 0, 0);
-    if (centerRef?.current?.getWorldPosition) {
-      centerRef.current.getWorldPosition(earthCenter);
-    }
-
-    // Update asteroid position (relative to Earth)
-    const asteroidPos = new THREE.Vector3(
-      earthCenter.x + pos.x,
-      earthCenter.y + pos.y,
-      earthCenter.z + pos.z
-    );
-
-    meshRef.current.position.copy(asteroidPos); // direct stable motion
-    if (orbitLineRef.current) orbitLineRef.current.position.copy(earthCenter);
-
-    // Update debug group position (smoother for overlay)
-    if (debugGroupRef.current) {
-      debugGroupRef.current.position.copy(
-        new THREE.Vector3(asteroidPos.x, asteroidPos.y + 1.5, asteroidPos.z)
+      timeRef.current += delta * speed * timeScale;
+      const t = timeRef.current % positions.length;
+      const idx = Math.floor(t);
+      const nextIdx = (idx + 1) % positions.length;
+      const alpha = t - idx;
+      const pos = new THREE.Vector3().lerpVectors(
+        positions[idx],
+        positions[nextIdx],
+        alpha
       );
-    }
 
-    // Check distance
-    const dist = asteroidPos.distanceTo(earthCenter);
-    const earthRadius = 0.8;
-    const asteroidRadius = size;
-    setDistance(dist);
+      // Earth center
+      const earthCenter = new THREE.Vector3(0, 0, 0);
+      if (centerRef?.current?.getWorldPosition)
+        centerRef.current.getWorldPosition(earthCenter);
 
-    if (!near && dist <= earthRadius * 3) {
-      setNear(true);
-      console.log(`⚠️ Approaching Earth — distance ≈ ${dist.toFixed(3)}`);
-    }
+      const asteroidPos = pos.clone().add(earthCenter);
+      meshRef.current.position.copy(asteroidPos);
 
-    if (dist <= earthRadius + asteroidRadius) {
-      console.warn(`💥 COLLISION detected! Distance: ${dist.toFixed(6)} units`);
-      setHasCollided(true);
-    }
-  });
+      if (orbitRef.current) orbitRef.current.position.copy(earthCenter);
+      if (debugRef.current)
+        debugRef.current.position.lerp(
+          new THREE.Vector3(asteroidPos.x, asteroidPos.y + 1.5, asteroidPos.z),
+          0.2
+        );
 
-  // 🔹 Color based on state
-  let color = "cyan";
-  if (hasCollided) color = "red";
-  else if (near) color = "yellow";
+      const dist = asteroidPos.distanceTo(earthCenter);
+      setDistance(dist);
 
-  // 🔹 Debug overlay style
-  const overlayStyle = {
-    background: "rgba(0,0,0,0.8)",
-    color: hasCollided ? "red" : near ? "yellow" : "#0f0",
-    fontSize: "12px",
-    fontFamily: "monospace",
-    padding: "6px 10px",
-    borderRadius: "6px",
-    border: "1px solid #0f0",
-    pointerEvents: "none",
-    textAlign: "center",
-    width: "120px",
-  };
+      if (!near && dist < 100) setNear(true);
+      if (dist < 30 && !collided) setCollided(true);
 
-  return (
-    <group>
-      {/* Asteroid body */}
-      <mesh ref={meshRef} geometry={geometry}>
-        <meshBasicMaterial color={color} wireframe opacity={0.9} transparent />
-      </mesh>
+      if (ref) ref.current = meshRef.current; // expose mesh to parent
+    });
 
-      {/* Orbit line */}
-      <line ref={orbitLineRef}>
-        <lineBasicMaterial color="#00ffff" linewidth={1.2} />
-      </line>
+    // Colors
+    let color = collided ? "red" : near ? "yellow" : "cyan";
+    const overlayStyle = {
+      background: "rgba(0,0,0,0.8)",
+      color,
+      fontSize: "12px",
+      fontFamily: "monospace",
+      padding: "6px 10px",
+      borderRadius: "6px",
+      border: "1px solid #0f0",
+      pointerEvents: "none",
+      textAlign: "center",
+      width: "120px",
+    };
 
-      {/* ✅ Stable debug overlay, independent of geometry clipping */}
-      {distance !== null && (
-        <group ref={debugGroupRef}>
-          <Html transform distanceFactor={10} occlude={false}>
-            <div style={overlayStyle}>
-              <b>Asteroid Debug</b>
-              <div>Dist: {distance.toFixed(3)}</div>
-              <div>
-                {hasCollided
-                  ? "💥 IMPACT"
-                  : near
-                  ? "⚠️ Approaching"
-                  : "🛰️ Safe orbit"}
+    return (
+      <group>
+        <mesh ref={meshRef} geometry={geometry}>
+          <meshBasicMaterial
+            color={color}
+            wireframe
+            transparent
+            opacity={0.8}
+          />
+        </mesh>
+        <line ref={orbitRef}>
+          <lineBasicMaterial color="#00ffff" linewidth={1.2} />
+        </line>
+        {distance !== null && (
+          <group ref={debugRef}>
+            <Html transform distanceFactor={10} occlude={false}>
+              <div style={overlayStyle}>
+                <b>Asteroid</b>
+                <div>Dist: {distance.toFixed(3)}</div>
+                <div>
+                  {collided
+                    ? "💥 IMPACT"
+                    : near
+                    ? "⚠️ Approaching"
+                    : "🛰️ Safe orbit"}
+                </div>
               </div>
-            </div>
-          </Html>
-        </group>
-      )}
-    </group>
-  );
-};
+            </Html>
+          </group>
+        )}
+      </group>
+    );
+  }
+);
 
 export default Asteroid;

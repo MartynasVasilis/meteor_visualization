@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Stars } from "@react-three/drei";
+import { Stars, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 
 import Planet from "../components/Planet";
@@ -9,44 +9,88 @@ import Sun from "../components/Sun";
 import MapOverlay from "../components/MapOverlay";
 import MathQuiz from "../components/MathQuiz";
 
-/* CameraFollow: lock camera to planet center (unchanged behavior) */
-function CameraFollow({ planetRef, zoom, setZoom, targetZoom, zoomToEarth }) {
+/* ===========================================================
+   📸 CAMERA FOLLOW SYSTEM
+   =========================================================== */
+function CameraFollow({
+  targetRef,
+  zoom,
+  setZoom,
+  targetZoom,
+  zoomToEarth,
+  controlsRef,
+  followEnabled,
+}) {
   const { camera } = useThree();
+
   useFrame(() => {
-    if (!planetRef.current) return;
+    if (!followEnabled || !targetRef.current) return;
+
     const worldPos = new THREE.Vector3();
-    planetRef.current.getWorldPosition(worldPos);
+    targetRef.current.getWorldPosition(worldPos);
 
-    const desiredZoom = zoomToEarth ? 0.5 : targetZoom;
-    setZoom((z) => {
-      if (Math.abs(z - desiredZoom) < 0.01) return desiredZoom;
-      return z + (desiredZoom - z) * 0.15;
-    });
+    const desiredZoom = zoomToEarth ? 1.0 : targetZoom;
+    setZoom((z) => z + (desiredZoom - z) * 0.1);
 
-    camera.position.set(worldPos.x, worldPos.y + zoom / 2, worldPos.z + zoom);
+    camera.position.lerp(
+      new THREE.Vector3(
+        worldPos.x,
+        worldPos.y + zoom * 0.8,
+        worldPos.z + zoom * 1.5
+      ),
+      0.05
+    );
     camera.lookAt(worldPos);
+
+    if (controlsRef?.current) {
+      controlsRef.current.target.lerp(worldPos, 0.1);
+      controlsRef.current.update();
+    }
   });
+
   return null;
 }
 
-const TOTAL_QUESTIONS = 7;
-
+/* ===========================================================
+   🌍 MAIN APP
+   =========================================================== */
 export default function App() {
   const planetRef = useRef();
   const asteroidRef = useRef();
+  const controlsRef = useRef();
+  const followTimerRef = useRef(null);
 
-  // camera / UI
-  const [zoom, setZoom] = useState(25);
-  const [targetZoom, setTargetZoom] = useState(25);
+  // camera & zoom
+  const [zoom, setZoom] = useState(80);
+  const [targetZoom, setTargetZoom] = useState(80);
   const [zoomToEarth, setZoomToEarth] = useState(false);
 
-  // map overlay + geojson
+  // follow system
+  const [followEnabled, setFollowEnabled] = useState(true);
+  const [followTarget, setFollowTarget] = useState("earth");
+
+  // map overlay + impact
   const [showMap, setShowMap] = useState(false);
   const [geojson, setGeojson] = useState(null);
   const [impact, setImpact] = useState(null);
   const [mapCenter, setMapCenter] = useState([20, 0]);
   const [mapZoom, setMapZoom] = useState(6);
 
+  // math minigame
+  const TOTAL_QUESTIONS = 7;
+  const [score, setScore] = useState(0);
+  const [message, setMessage] = useState("Answer questions to increase speed.");
+  const [minigameActive, setMinigameActive] = useState(false);
+  const [minigameComplete, setMinigameComplete] = useState(false);
+
+  // asteroid / planet speeds
+  const [asteroidSpeed, setAsteroidSpeed] = useState(1);
+  const [planetSpeed, setPlanetSpeed] = useState(1);
+  const [earthPositions, setEarthPositions] = useState([]);
+
+  /* ===========================================================
+     🗂 LOAD GEOJSON
+     =========================================================== */
   useEffect(() => {
     fetch("/assets/r3f_demo/ne_110m_admin_0_countries.geojson")
       .then((r) => r.json())
@@ -54,29 +98,9 @@ export default function App() {
       .catch(() => setGeojson(null));
   }, []);
 
-  // asteroid defaults
-  const asteroidSize = 0.1;
-  const asteroidDistance = 20;
-  const [asteroidSpeed, setAsteroidSpeed] = useState(1);
-  const [planetSpeed, setPlanetSpeed] = useState(1);
-
-  // homing / quiz state
-  const [homingStrength, setHomingStrength] = useState(0.2);
-  const HOMING_PER_CORRECT = 0.33;
-  const MAX_HOMING = 1.0;
-  const [score, setScore] = useState(0);
-  const [message, setMessage] = useState("Answer questions to increase speed.");
-  const [minigameActive, setMinigameActive] = useState(false);
-  const [minigameComplete, setMinigameComplete] = useState(false);
-
-  // load asteroid-data-based orbit dir (unused here but safe)
-  useEffect(() => {
-    fetch("/assets/r3f_demo/assets/data/asteroid_data.json")
-      .then((res) => res.json())
-      .catch(() => {});
-  }, []);
-
-  /* Simulate impact handlers (same as your ground button behavior) */
+  /* ===========================================================
+     🌎 SIMULATION CONTROLS
+     =========================================================== */
   const handleSimulateGround = () => {
     setImpact({ lat: 55.1694, lng: 23.8813, radius_km: 50 });
     setMapCenter([55.1694, 23.8813]);
@@ -84,64 +108,116 @@ export default function App() {
     setZoomToEarth(true);
     setTimeout(() => setShowMap(true), 1200);
   };
-  const handleSimulateSea = () => {
-    setImpact({ lat: 30.0, lng: -40.0, radius_km: 200 });
-    setMapCenter([30.0, -40.0]);
-    setMapZoom(5);
-    setZoomToEarth(true);
-    setTimeout(() => setShowMap(true), 1200);
-  };
 
-  // right-click to close map / reset zoom
   const handleRightClick = (e) => {
     e.preventDefault();
     setZoomToEarth(false);
     setShowMap(false);
-    setTargetZoom(25);
+    setTargetZoom(80);
   };
 
+  const handleCloseMap = () => {
+    setShowMap(false);
+    setZoomToEarth(false);
+    setTargetZoom(80);
+  };
+
+  const handleImpact = () => {
+    console.warn("💥 Impact detected!");
+    setShowMap(true);
+  };
+
+  const clearFollowTimer = () => {
+    if (followTimerRef.current) {
+      clearTimeout(followTimerRef.current);
+      followTimerRef.current = null;
+    }
+  };
+
+  const startFollowTimer = () => {
+    clearFollowTimer();
+    followTimerRef.current = setTimeout(() => {
+      setFollowEnabled(true);
+      followTimerRef.current = null;
+    }, 3000);
+  };
+
+  /* ===========================================================
+     🚀 MAIN RETURN
+     =========================================================== */
   return (
     <div
       style={{ width: "100vw", height: "100vh", position: "relative" }}
       onContextMenu={handleRightClick}
     >
-      {/* Top-left simulate buttons */}
-      <div style={{ position: "absolute", top: 20, left: 20, zIndex: 2000 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <button
-            style={btnStyle}
-            onClick={() => {
-              handleSimulateGround();
-            }}
-          >
-            Simulate impact on ground
-          </button>
-          <button style={btnStyle} onClick={handleSimulateSea}>
-            Simulate impact on sea
-          </button>
-        </div>
+      {/* CONTROL BUTTONS */}
+      <div
+        style={{
+          position: "absolute",
+          top: 20,
+          left: 20,
+          zIndex: 2000,
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
+        }}
+      >
+        <button style={btnStyle} onClick={handleSimulateGround}>
+          Simulate impact on ground
+        </button>
+        <button
+          style={{ ...btnStyle, color: followEnabled ? "red" : "lime" }}
+          onClick={() => setFollowEnabled((f) => !f)}
+        >
+          {followEnabled ? "Disable Auto-Follow" : "Enable Auto-Follow"}
+        </button>
+        <button
+          style={{
+            ...btnStyle,
+            color: followTarget === "earth" ? "lime" : "white",
+          }}
+          onClick={() => setFollowTarget("earth")}
+        >
+          Follow Earth
+        </button>
+        <button
+          style={{
+            ...btnStyle,
+            color: followTarget === "asteroid" ? "lime" : "white",
+          }}
+          onClick={() => setFollowTarget("asteroid")}
+        >
+          Follow Asteroid
+        </button>
       </div>
 
-      {/* Top-right zoom (kept) */}
-      <div style={{ position: "absolute", top: 20, right: 40, zIndex: 2100 }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <button
-            style={{ ...btnStyle, padding: "6px 16px", fontSize: 24 }}
-            onClick={() => setTargetZoom((z) => Math.max(0.5, z - 3))}
-          >
-            +
-          </button>
-          <button
-            style={{ ...btnStyle, padding: "6px 16px", fontSize: 24 }}
-            onClick={() => setTargetZoom((z) => Math.min(200, z + 3))}
-          >
-            −
-          </button>
-        </div>
+      {/* ZOOM CONTROLS */}
+      <div
+        style={{
+          position: "absolute",
+          top: 20,
+          right: 40,
+          zIndex: 2100,
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
+        }}
+      >
+        <button
+          style={btnStyle}
+          onClick={() => setTargetZoom((z) => Math.max(10, z - 10))}
+        >
+          +
+        </button>
+        <button
+          style={btnStyle}
+          onClick={() => setTargetZoom((z) => Math.min(1000, z + 10))}
+        >
+          −
+        </button>
       </div>
 
-      {/* Bottom-left: math quiz + info */}
-      {/* Bottom-left: minigame trigger and quiz */}
+      {/* MATH MINIGAME / SCORE */}
       <div
         style={{
           position: "absolute",
@@ -173,43 +249,35 @@ export default function App() {
           </button>
         )}
         {minigameActive && !minigameComplete && (
-          <>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div>
-                Score: {score} / {TOTAL_QUESTIONS}
-              </div>
-              <div style={{ minWidth: 220, color: "lightgreen" }}>
-                {message}
-              </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div>
+              Score: {score} / {TOTAL_QUESTIONS}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <MathQuiz
-                numQuestions={TOTAL_QUESTIONS}
-                onCorrect={() => {
-                  setScore((s) => {
-                    const next = s + 1;
-                    if (next >= TOTAL_QUESTIONS) {
-                      setMessage(
-                        "🎉 Congratulations! You completed the minigame."
-                      );
-                      setMinigameActive(false);
-                      setMinigameComplete(true);
-                    } else {
-                      setMessage("Correct!");
-                    }
-                    return next;
-                  });
-                }}
-                onWrong={() => setMessage("Wrong — try again.")}
-                onTimeout={() => {
-                  setMessage("⏰ Out of time! Impact triggered.");
-                  setMinigameActive(false);
-                  handleSimulateGround();
-                }}
-                timePerQuestion={30}
-              />
-            </div>
-          </>
+            <div style={{ minWidth: 220, color: "lightgreen" }}>{message}</div>
+            <MathQuiz
+              numQuestions={TOTAL_QUESTIONS}
+              onCorrect={() => {
+                setScore((s) => {
+                  const next = s + 1;
+                  if (next >= TOTAL_QUESTIONS) {
+                    setMessage(
+                      "🎉 Congratulations! You completed the minigame."
+                    );
+                    setMinigameActive(false);
+                    setMinigameComplete(true);
+                  } else setMessage("Correct!");
+                  return next;
+                });
+              }}
+              onWrong={() => setMessage("Wrong — try again.")}
+              onTimeout={() => {
+                setMessage("⏰ Out of time! Impact triggered.");
+                setMinigameActive(false);
+                handleSimulateGround();
+              }}
+              timePerQuestion={30}
+            />
+          </div>
         )}
         {minigameComplete && (
           <div style={{ color: "lime", fontWeight: "bold", fontSize: 22 }}>
@@ -221,31 +289,73 @@ export default function App() {
       </div>
 
       {/* 3D Canvas */}
-      <Canvas camera={{ position: [0, 10, 25] }}>
-        <ambientLight intensity={0.35} />
-        <pointLight position={[0, 0, 0]} intensity={2} />
-        <Stars radius={300} depth={60} count={5000} factor={7} />
+      <Canvas camera={{ position: [0, 30, 120], near: 0.01, far: 50000 }}>
+        <ambientLight intensity={0.6} />
+        <pointLight
+          position={[0, 0, 0]}
+          intensity={3.0}
+          distance={10000}
+          decay={2}
+        />
+        <Stars
+          radius={8000}
+          depth={3000}
+          count={8000}
+          factor={10}
+          fade
+          saturation={0}
+        />
 
         <Sun />
-        <Planet ref={planetRef} distance={300} speed={planetSpeed} />
+        <Planet
+          ref={planetRef}
+          speed={planetSpeed}
+          onDataLoaded={setEarthPositions}
+        />
         <Asteroid
           ref={asteroidRef}
-          centerRef={planetRef}
-          distance={asteroidDistance}
-          size={asteroidSize}
+          earthPositions={earthPositions}
+          scale={1}
+          size={0.15}
           speed={asteroidSpeed}
+          onImpact={handleImpact}
+        />
+
+        <OrbitControls
+          ref={controlsRef}
+          enableZoom
+          enablePan
+          enableRotate
+          zoomSpeed={0.8}
+          rotateSpeed={0.7}
+          panSpeed={0.5}
+          maxDistance={10000}
+          minDistance={1}
+          onStart={() => {
+            setFollowEnabled(false);
+            clearFollowTimer();
+          }}
+          onEnd={startFollowTimer}
         />
 
         <CameraFollow
-          planetRef={planetRef}
+          targetRef={
+            zoomToEarth
+              ? planetRef
+              : followTarget === "asteroid"
+              ? asteroidRef
+              : planetRef
+          }
           zoom={zoom}
           setZoom={setZoom}
           targetZoom={targetZoom}
           zoomToEarth={zoomToEarth}
+          controlsRef={controlsRef}
+          followEnabled={followEnabled}
         />
       </Canvas>
 
-      {/* Map overlay (unchanged) */}
+      {/* MAP OVERLAY */}
       {showMap && geojson && (
         <div
           style={{
@@ -264,34 +374,36 @@ export default function App() {
           }}
         >
           <button
-            onClick={() => {
-              setZoomToEarth(true);
-              setShowMap(false);
-              setTimeout(() => {
-                setZoomToEarth(false);
-                setTargetZoom(25);
-              }, 100);
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCloseMap();
             }}
+            aria-label="Close map overlay"
+            tabIndex={0}
             style={{
               position: "absolute",
-              top: 40,
-              right: 40,
-              background: "rgba(0,0,0,0.8)",
-              color: "lime",
-              border: "2px solid lime",
+              top: 18,
+              right: 18,
+              background: "lime",
+              color: "#000",
+              border: "none",
               borderRadius: "50%",
-              width: 48,
-              height: 48,
-              fontSize: 48,
+              width: 36,
+              height: 36,
+              fontSize: 24,
+              fontWeight: 700,
+              lineHeight: "36px",
+              textAlign: "center",
               cursor: "pointer",
               zIndex: 2000,
-              padding: 0,
-              lineHeight: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
             }}
           >
             ×
           </button>
-
           <MapOverlay zoom={mapZoom} center={mapCenter} impact={impact} />
         </div>
       )}
@@ -299,7 +411,7 @@ export default function App() {
   );
 }
 
-// small helpers used in App.jsx
+// BUTTON STYLE
 const btnStyle = {
   background: "rgba(0,0,0,0.8)",
   color: "lime",

@@ -1,11 +1,13 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, forwardRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 
 const RADIUS = 0.8;
 const DATA_URL = "/assets/r3f_demo/assets/data/asteroid_data.json";
 
-// Convert lat/lon to Vec3 (for borders)
+/* ===========================================================
+   Convert geographic coordinates to Vec3 (for country borders)
+=========================================================== */
 function latLonToVec3(lat, lon, radius = RADIUS) {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
@@ -16,7 +18,9 @@ function latLonToVec3(lat, lon, radius = RADIUS) {
   );
 }
 
-// Country borders (wireframe)
+/* ===========================================================
+   Country borders wireframe
+=========================================================== */
 function CountryBorders({ geojson }) {
   if (!geojson) return null;
 
@@ -66,8 +70,10 @@ function CountryBorders({ geojson }) {
   );
 }
 
-// ---------------- Planet ----------------
-const Planet = React.forwardRef(
+/* ===========================================================
+   Planet component
+=========================================================== */
+const Planet = forwardRef(
   ({ size = RADIUS, speed = 1, timeScale = 10 }, ref) => {
     const [geojson, setGeojson] = useState(null);
     const [positions, setPositions] = useState([]);
@@ -76,7 +82,7 @@ const Planet = React.forwardRef(
     const orbitLineRef = useRef();
     const timeRef = useRef(0);
 
-    // Load Earth trajectory
+    // Load Earth heliocentric trajectory
     useEffect(() => {
       fetch(DATA_URL)
         .then((res) => res.json())
@@ -89,9 +95,7 @@ const Planet = React.forwardRef(
               )
             );
             setPositions(pts);
-          } else {
-            console.error("❌ Earth arrays not found in JSON!");
-          }
+          } else console.error("❌ Earth arrays not found in JSON!");
         })
         .catch((err) => console.error("Failed to load Earth JSON:", err));
     }, []);
@@ -104,21 +108,21 @@ const Planet = React.forwardRef(
         .catch((err) => console.error("Failed to load GeoJSON:", err));
     }, []);
 
-    // Create orbit line once
+    // Build orbit line
     useEffect(() => {
       if (!positions.length || !orbitLineRef.current) return;
-      const lineGeom = new THREE.BufferGeometry();
       const arr = new Float32Array(positions.length * 3);
       positions.forEach((v, i) => {
         arr[i * 3] = v.x;
         arr[i * 3 + 1] = v.y;
         arr[i * 3 + 2] = v.z;
       });
-      lineGeom.setAttribute("position", new THREE.BufferAttribute(arr, 3));
-      orbitLineRef.current.geometry = lineGeom;
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+      orbitLineRef.current.geometry = geom;
     }, [positions]);
 
-    // Animate Earth (frame-independent)
+    // Animate Earth
     useFrame((_, delta) => {
       if (!positions.length || !groupRef.current) return;
       timeRef.current += delta * speed * timeScale;
@@ -130,12 +134,12 @@ const Planet = React.forwardRef(
 
     return (
       <>
-        {/* Orbit path (static) */}
+        {/* Orbit path */}
         <line ref={orbitLineRef}>
           <lineBasicMaterial color="#00ff00" linewidth={1.2} />
         </line>
 
-        {/* Earth body */}
+        {/* Earth mesh */}
         <group
           ref={(node) => {
             groupRef.current = node;
