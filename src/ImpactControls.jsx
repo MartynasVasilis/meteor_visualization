@@ -14,9 +14,8 @@ export default function ImpactControls({
   impact,
   setImpact,
 }) {
-  // Simulate impact handlers with smooth zoom-in
   const handleSimulateGround = () => {
-    setImpact({ lat: 55.1694, lng: 23.8813, radius_km: 50 }); // Lithuania
+    setImpact({ lat: 55.1694, lng: 23.8813, radius_km: 50 }); 
     setMapCenter([55.1694, 23.8813]);
     setMapZoom(7);
     setZoomToEarth(true);
@@ -26,7 +25,7 @@ export default function ImpactControls({
   };
 
   const handleSimulateSea = () => {
-    setImpact({ lat: 30.0, lng: -40.0, radius_km: 200 }); // Atlantic
+    setImpact({ lat: 30.0, lng: -40.0, radius_km: 200 }); 
     setMapCenter([30.0, -40.0]);
     setMapZoom(5);
     setZoomToEarth(true);
@@ -35,24 +34,21 @@ export default function ImpactControls({
     }, 1200);
   };
 
-  // X button handler: smooth zoom out
   const handleCloseMap = () => {
-    setZoomToEarth(true); // Start zoom out immediately
+    setZoomToEarth(true); 
     setTimeout(() => {
-      setShowMap(false); // Hide overlay after animation
+      setShowMap(false); 
       setZoomToEarth(false);
       setTargetZoom(25);
     }, 1200);
   };
 
   const onLaunchProjectile = () => {
-    // Placeholder for launch projectile logic
     alert("Launch projectile simulated!");
   };
 
   return (
     <>
-      {/* Control Buttons */}
       <div
         style={{
           position: "absolute",
@@ -94,7 +90,6 @@ export default function ImpactControls({
         </button>
       </div>
 
-      {/* Zoom Buttons */}
       <div
         style={{
           position: "absolute",
@@ -139,8 +134,6 @@ export default function ImpactControls({
           −
         </button>
       </div>
-
-      {/* Map Overlay */}
       {showMap && geojson && (
         <div
           style={{
@@ -158,7 +151,6 @@ export default function ImpactControls({
             justifyContent: "center",
           }}
         >
-          {/* X Button */}
           <button
             onClick={handleCloseMap}
             style={{
