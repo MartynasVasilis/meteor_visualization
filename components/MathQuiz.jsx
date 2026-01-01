@@ -1,44 +1,30 @@
 import React, { useState, useEffect, useRef } from "react";
 
-/*
- MathQuiz - simple list of hard-coded questions.
- Callbacks:
-  - onCorrect()
-  - onWrong()
-*/
-
-// Generate a more difficult random math question
 function generateQuestion() {
-  // Randomly pick a type: 0=add, 1=sub, 2=mul, 3=div, 4=multi-step
   const type = Math.floor(Math.random() * 5);
   let q, a;
   if (type === 0) {
-    // Large addition
     const x = Math.floor(Math.random() * 900 + 100);
     const y = Math.floor(Math.random() * 900 + 100);
     q = `${x} + ${y}`;
     a = x + y;
   } else if (type === 1) {
-    // Large subtraction
     const x = Math.floor(Math.random() * 900 + 200);
     const y = Math.floor(Math.random() * 199 + 1);
     q = `${x} - ${y}`;
     a = x - y;
   } else if (type === 2) {
-    // Multiplication
     const x = Math.floor(Math.random() * 40 + 10);
     const y = Math.floor(Math.random() * 30 + 10);
     q = `${x} × ${y}`;
     a = x * y;
   } else if (type === 3) {
-    // Division with integer result
     const y = Math.floor(Math.random() * 19 + 2);
     const aInt = Math.floor(Math.random() * 30 + 5);
     const x = y * aInt;
     q = `${x} / ${y}`;
     a = aInt;
   } else {
-    // Multi-step: (a + b) × c
     const a1 = Math.floor(Math.random() * 40 + 10);
     const b1 = Math.floor(Math.random() * 40 + 10);
     const c1 = Math.floor(Math.random() * 10 + 2);
@@ -94,7 +80,6 @@ export default function MathQuiz({
         setInput("");
         setTimeLeft(timePerQuestion);
       }
-      // else: parent will handle completion
     } else {
       onWrong();
       setInput("");
