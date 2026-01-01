@@ -2,7 +2,6 @@ import React, { useEffect } from "react";
 import { MapContainer, TileLayer, Circle, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Smoothly updates map view
 function UpdateView({ center, zoom }) {
   const map = useMap();
   useEffect(() => {
@@ -13,9 +12,7 @@ function UpdateView({ center, zoom }) {
   return null;
 }
 
-// MapOverlay with optional impact circle
 export default function MapOverlay({ zoom = 2, center = [20, 0], impact }) {
-  // Do not render if impact data is invalid
   const validImpact =
     impact &&
     typeof impact.lat === "number" &&
@@ -38,7 +35,7 @@ export default function MapOverlay({ zoom = 2, center = [20, 0], impact }) {
       {validImpact && (
         <Circle
           center={[impact.lat, impact.lng]}
-          radius={impact.radius_km * 1000} // radius in meters
+          radius={impact.radius_km * 1000} 
           pathOptions={{
             color: "lime",
             fillColor: "lime",
