@@ -33,8 +33,7 @@ const Asteroid = forwardRef(
     const [distance, setDistance] = useState(null);
     const [near, setNear] = useState(false);
     const [collided, setCollided] = useState(false);
-
-    // Load asteroid trajectory
+    
     useEffect(() => {
       fetch(DATA_URL)
         .then((r) => r.json())
@@ -53,13 +52,11 @@ const Asteroid = forwardRef(
         .catch(console.error);
     }, [scale]);
 
-    // Geometry
     const geometry = useMemo(() => {
       const g = new THREE.SphereGeometry(size, 24, 24);
       return randomizeGeometry(g, 0.4);
     }, [size]);
 
-    // Build orbit line
     useEffect(() => {
       if (!positions.length || !orbitRef.current) return;
       const arr = new Float32Array(positions.length * 3);
@@ -69,7 +66,6 @@ const Asteroid = forwardRef(
       orbitRef.current.geometry = g;
     }, [positions]);
 
-    // Animation
     useFrame((_, delta) => {
       if (!meshRef.current || positions.length < 2 || collided) return;
 
@@ -84,7 +80,6 @@ const Asteroid = forwardRef(
         alpha
       );
 
-      // Earth center
       const earthCenter = new THREE.Vector3(0, 0, 0);
       if (centerRef?.current?.getWorldPosition)
         centerRef.current.getWorldPosition(earthCenter);
@@ -105,10 +100,9 @@ const Asteroid = forwardRef(
       if (!near && dist < 100) setNear(true);
       if (dist < 30 && !collided) setCollided(true);
 
-      if (ref) ref.current = meshRef.current; // expose mesh to parent
+      if (ref) ref.current = meshRef.current; 
     });
 
-    // Colors
     let color = collided ? "red" : near ? "yellow" : "cyan";
     const overlayStyle = {
       background: "rgba(0,0,0,0.8)",
