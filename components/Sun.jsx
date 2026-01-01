@@ -9,7 +9,6 @@ const Sun = React.forwardRef(({ size = SUN_RADIUS }, ref) => {
   const wire2 = useRef();
 
   useFrame(({ clock }) => {
-    // Animate wireframes for digital effect
     if (wire1.current) {
       wire1.current.rotation.y = clock.getElapsedTime() * 0.5;
     }
@@ -20,12 +19,10 @@ const Sun = React.forwardRef(({ size = SUN_RADIUS }, ref) => {
 
   return (
     <group ref={ref} position={[0, 0, 0]}>
-      {/* Core */}
       <mesh>
         <sphereGeometry args={[size * 0.97, 32, 32]} />
         <meshBasicMaterial color="black" />
       </mesh>
-      {/* Neon green wireframe 1 */}
       <mesh ref={wire1}>
         <sphereGeometry args={[size, 32, 32]} />
         <meshBasicMaterial
@@ -35,7 +32,6 @@ const Sun = React.forwardRef(({ size = SUN_RADIUS }, ref) => {
           opacity={0.8}
         />
       </mesh>
-      {/* Neon green wireframe 2 (rotated) */}
       <mesh ref={wire2}>
         <sphereGeometry args={[size * 1.03, 32, 32]} />
         <meshBasicMaterial
