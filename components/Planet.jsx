@@ -5,9 +5,6 @@ import { useFrame } from "@react-three/fiber";
 const RADIUS = 0.8;
 const DATA_URL = "/assets/r3f_demo/assets/data/asteroid_data.json";
 
-/* ===========================================================
-   Convert geographic coordinates to Vec3 (for country borders)
-=========================================================== */
 function latLonToVec3(lat, lon, radius = RADIUS) {
   const phi = (90 - lat) * (Math.PI / 180);
   const theta = (lon + 180) * (Math.PI / 180);
@@ -18,9 +15,6 @@ function latLonToVec3(lat, lon, radius = RADIUS) {
   );
 }
 
-/* ===========================================================
-   Country borders wireframe
-=========================================================== */
 function CountryBorders({ geojson }) {
   if (!geojson) return null;
 
@@ -70,9 +64,6 @@ function CountryBorders({ geojson }) {
   );
 }
 
-/* ===========================================================
-   Planet component
-=========================================================== */
 const Planet = forwardRef(
   ({ size = RADIUS, speed = 1, timeScale = 10 }, ref) => {
     const [geojson, setGeojson] = useState(null);
@@ -82,7 +73,6 @@ const Planet = forwardRef(
     const orbitLineRef = useRef();
     const timeRef = useRef(0);
 
-    // Load Earth heliocentric trajectory
     useEffect(() => {
       fetch(DATA_URL)
         .then((res) => res.json())
@@ -100,7 +90,6 @@ const Planet = forwardRef(
         .catch((err) => console.error("Failed to load Earth JSON:", err));
     }, []);
 
-    // Load GeoJSON borders
     useEffect(() => {
       fetch("/assets/r3f_demo/ne_110m_admin_0_countries.geojson")
         .then((res) => res.json())
@@ -108,7 +97,6 @@ const Planet = forwardRef(
         .catch((err) => console.error("Failed to load GeoJSON:", err));
     }, []);
 
-    // Build orbit line
     useEffect(() => {
       if (!positions.length || !orbitLineRef.current) return;
       const arr = new Float32Array(positions.length * 3);
@@ -122,7 +110,6 @@ const Planet = forwardRef(
       orbitLineRef.current.geometry = geom;
     }, [positions]);
 
-    // Animate Earth
     useFrame((_, delta) => {
       if (!positions.length || !groupRef.current) return;
       timeRef.current += delta * speed * timeScale;
@@ -134,12 +121,9 @@ const Planet = forwardRef(
 
     return (
       <>
-        {/* Orbit path */}
         <line ref={orbitLineRef}>
           <lineBasicMaterial color="#00ff00" linewidth={1.2} />
         </line>
-
-        {/* Earth mesh */}
         <group
           ref={(node) => {
             groupRef.current = node;
