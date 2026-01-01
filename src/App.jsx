@@ -9,9 +9,6 @@ import Sun from "../components/Sun";
 import MapOverlay from "../components/MapOverlay";
 import MathQuiz from "../components/MathQuiz";
 
-/* ===========================================================
-   📸 CAMERA FOLLOW SYSTEM
-   =========================================================== */
 function CameraFollow({
   targetRef,
   zoom,
@@ -51,46 +48,35 @@ function CameraFollow({
   return null;
 }
 
-/* ===========================================================
-   🌍 MAIN APP
-   =========================================================== */
 export default function App() {
   const planetRef = useRef();
   const asteroidRef = useRef();
   const controlsRef = useRef();
   const followTimerRef = useRef(null);
 
-  // camera & zoom
   const [zoom, setZoom] = useState(80);
   const [targetZoom, setTargetZoom] = useState(80);
   const [zoomToEarth, setZoomToEarth] = useState(false);
 
-  // follow system
   const [followEnabled, setFollowEnabled] = useState(true);
   const [followTarget, setFollowTarget] = useState("earth");
 
-  // map overlay + impact
   const [showMap, setShowMap] = useState(false);
   const [geojson, setGeojson] = useState(null);
   const [impact, setImpact] = useState(null);
   const [mapCenter, setMapCenter] = useState([20, 0]);
   const [mapZoom, setMapZoom] = useState(6);
 
-  // math minigame
   const TOTAL_QUESTIONS = 7;
   const [score, setScore] = useState(0);
   const [message, setMessage] = useState("Answer questions to increase speed.");
   const [minigameActive, setMinigameActive] = useState(false);
   const [minigameComplete, setMinigameComplete] = useState(false);
 
-  // asteroid / planet speeds
   const [asteroidSpeed, setAsteroidSpeed] = useState(1);
   const [planetSpeed, setPlanetSpeed] = useState(1);
   const [earthPositions, setEarthPositions] = useState([]);
 
-  /* ===========================================================
-     🗂 LOAD GEOJSON
-     =========================================================== */
   useEffect(() => {
     fetch("/assets/r3f_demo/ne_110m_admin_0_countries.geojson")
       .then((r) => r.json())
@@ -98,9 +84,6 @@ export default function App() {
       .catch(() => setGeojson(null));
   }, []);
 
-  /* ===========================================================
-     🌎 SIMULATION CONTROLS
-     =========================================================== */
   const handleSimulateGround = () => {
     setImpact({ lat: 55.1694, lng: 23.8813, radius_km: 50 });
     setMapCenter([55.1694, 23.8813]);
@@ -142,15 +125,11 @@ export default function App() {
     }, 3000);
   };
 
-  /* ===========================================================
-     🚀 MAIN RETURN
-     =========================================================== */
   return (
     <div
       style={{ width: "100vw", height: "100vh", position: "relative" }}
       onContextMenu={handleRightClick}
     >
-      {/* CONTROL BUTTONS */}
       <div
         style={{
           position: "absolute",
@@ -190,8 +169,6 @@ export default function App() {
           Follow Asteroid
         </button>
       </div>
-
-      {/* ZOOM CONTROLS */}
       <div
         style={{
           position: "absolute",
@@ -216,8 +193,6 @@ export default function App() {
           −
         </button>
       </div>
-
-      {/* MATH MINIGAME / SCORE */}
       <div
         style={{
           position: "absolute",
@@ -287,8 +262,6 @@ export default function App() {
           </div>
         )}
       </div>
-
-      {/* 3D Canvas */}
       <Canvas camera={{ position: [0, 30, 120], near: 0.01, far: 50000 }}>
         <ambientLight intensity={0.6} />
         <pointLight
@@ -354,8 +327,6 @@ export default function App() {
           followEnabled={followEnabled}
         />
       </Canvas>
-
-      {/* MAP OVERLAY */}
       {showMap && geojson && (
         <div
           style={{
@@ -411,7 +382,6 @@ export default function App() {
   );
 }
 
-// BUTTON STYLE
 const btnStyle = {
   background: "rgba(0,0,0,0.8)",
   color: "lime",
